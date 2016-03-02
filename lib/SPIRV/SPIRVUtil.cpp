@@ -1221,15 +1221,15 @@ mangleBuiltin(const std::string &UniqName,
         SPIR::PRIMITIVE_VOID)));
     }
   } else {
-    for (unsigned I = 0, E = ArgTypes.size();
-         I != E && I != BtnInfo->getVarArg(); ++I) {
+    for (unsigned I = 0, E = ArgTypes.size(); I != E && 
+         (BtnInfo->getVarArg() < 0 || I != (unsigned)BtnInfo->getVarArg()); ++I) {
       auto T = ArgTypes[I];
       FD.parameters.emplace_back(transTypeDesc(T, BtnInfo->getTypeMangleInfo(I)));
     }
   }
   // Ellipsis must be the last argument of any function
   if(0 <= BtnInfo->getVarArg()) {
-    assert(BtnInfo->getVarArg() <= ArgTypes.size()
+    assert((unsigned)BtnInfo->getVarArg() <= ArgTypes.size()
            && "invalid index of an ellipsis");
     FD.parameters.emplace_back(SPIR::RefParamType(new SPIR::PrimitiveType(
         SPIR::PRIMITIVE_VAR_ARG)));
