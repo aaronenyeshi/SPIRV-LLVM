@@ -1212,23 +1212,24 @@ mangleBuiltin(const std::string &UniqName,
   SPIR::NameMangler Mangler(SPIR::SPIR20);
   SPIR::FunctionDescriptor FD;
   FD.name = BtnInfo->getUnmangledName();
+  bool BIVarArgNegative = BtnInfo->getVarArg() < 0;
 
   if (ArgTypes.empty()) {
     // Function signature cannot be ()(void, ...) so if there is an ellipsis
     // it must be ()(...)
-    if(BtnInfo->getVarArg() < 0) {
+    if(BIVarArgNegative) {
       FD.parameters.emplace_back(SPIR::RefParamType(new SPIR::PrimitiveType(
         SPIR::PRIMITIVE_VOID)));
     }
   } else {
     for (unsigned I = 0, E = ArgTypes.size(); I != E && 
-         (BtnInfo->getVarArg() < 0 || I != (unsigned)BtnInfo->getVarArg()); ++I) {
+         (BIVarArgNegative || I != (unsigned)BtnInfo->getVarArg()); ++I) {
       auto T = ArgTypes[I];
       FD.parameters.emplace_back(transTypeDesc(T, BtnInfo->getTypeMangleInfo(I)));
     }
   }
   // Ellipsis must be the last argument of any function
-  if(0 <= BtnInfo->getVarArg()) {
+  if(!BIVarArgNegative) {
     assert((unsigned)BtnInfo->getVarArg() <= ArgTypes.size()
            && "invalid index of an ellipsis");
     FD.parameters.emplace_back(SPIR::RefParamType(new SPIR::PrimitiveType(
