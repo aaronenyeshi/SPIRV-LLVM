@@ -1222,8 +1222,9 @@ mangleBuiltin(const std::string &UniqName,
         SPIR::PRIMITIVE_VOID)));
     }
   } else {
-    for (unsigned I = 0, E = ArgTypes.size(); I != E && 
-         (BIVarArgNegative || I != (unsigned)BtnInfo->getVarArg()); ++I) {
+    for (unsigned I = 0, 
+         E = BIVarArgNegative ? ArgTypes.size() : (unsigned)BtnInfo->getVarArg();
+         I != E; ++I) {
       auto T = ArgTypes[I];
       FD.parameters.emplace_back(transTypeDesc(T, BtnInfo->getTypeMangleInfo(I)));
     }
