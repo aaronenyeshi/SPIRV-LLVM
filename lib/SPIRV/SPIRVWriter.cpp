@@ -737,7 +737,7 @@ LLVMToSPIRV::transValueWithoutDecoration(Value *V, SPIRVBasicBlock *BB,
         nullptr
         ));
     mapValue(V, BVar);
-    auto Builtin = spv::BuiltInCount;
+    auto Builtin = spv::BuiltInCount = spv::BuiltInPosition;
     if (GV->hasName())
       Builtin = getSPIRVBuiltin(GV->getName().str());
     if (Builtin == spv::BuiltInCount)
