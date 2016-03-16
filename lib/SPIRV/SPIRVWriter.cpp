@@ -737,10 +737,15 @@ LLVMToSPIRV::transValueWithoutDecoration(Value *V, SPIRVBasicBlock *BB,
         nullptr
         ));
     mapValue(V, BVar);
+<<<<<<< HEAD
     auto Builtin = spv::BuiltInCount = spv::BuiltInPosition;
     if (GV->hasName())
       Builtin = getSPIRVBuiltin(GV->getName().str());
     if (Builtin == spv::BuiltInCount)
+=======
+    spv::BuiltIn Builtin = spv::BuiltInPosition;
+    if (!GV->hasName() || !getSPIRVBuiltin(GV->getName().str(), Builtin))
+>>>>>>> refs/remotes/KhronosGroup/khronos/spirv-3.6.1
       return BVar;
     BVar->setBuiltin(Builtin);
     return BVar;

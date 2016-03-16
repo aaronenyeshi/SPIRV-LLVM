@@ -447,15 +447,13 @@ getSPIRVFuncOC(const std::string& S, SmallVectorImpl<std::string> *Dec) {
   return OC;
 }
 
-spv::BuiltIn
-getSPIRVBuiltin(const std::string &OrigName) {
+bool
+getSPIRVBuiltin(const std::string &OrigName, spv::BuiltIn &B) {
   SmallVector<StringRef, 2> Postfix;
   StringRef R(OrigName);
   R = dePrefixSPIRVName(R, Postfix);
   assert(Postfix.empty() && "Invalid SPIR-V builtin name");
-  spv::BuiltIn B = spv::BuiltInCount;
-  getByName(R.str(), B);
-  return B;
+  return getByName(R.str(), B);
 }
 
 bool oclIsBuiltin(const StringRef &Name, unsigned SrcLangVer,
@@ -692,7 +690,8 @@ addCallInst(Module *M, StringRef FuncName, Type *RetTy, ArrayRef<Value *> Args,
 
   auto F = getOrCreateFunction(M, RetTy, getTypes(Args),
       FuncName, Mangle, Attrs, TakeFuncName);
-  auto CI = CallInst::Create(F, Args, InstName, Pos);
+  // Cannot assign a name to void typed values
+  auto CI = CallInst::Create(F, Args, RetTy->isVoidTy() ? "" : InstName, Pos);
   CI->setCallingConv(F->getCallingConv());
   return CI;
 }
