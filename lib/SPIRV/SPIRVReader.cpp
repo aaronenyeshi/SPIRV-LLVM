@@ -628,14 +628,14 @@ SPIRVToLLVM::transOCLImageTypeName(SPIRV::SPIRVTypeImage* ST) {
 
 std::string
 SPIRVToLLVM::transOCLSampledImageTypeName(SPIRV::SPIRVTypeSampledImage* ST) {
-  return std::string(kSPIRVTypeName::SampledImg)
-       + kSPR2TypeName::Delimiter
-       + rmap<std::string>(ST->getImageType()->getDescriptor());
+  return getSPIRVTypeName(kSPIRVTypeName::SampledImg,
+    getSPIRVImageTypePostfixes(ST->getImageType()->getDescriptor(),
+      ST->getImageType()->getAccessQualifier()));
 }
 
 std::string
 SPIRVToLLVM::transOCLPipeTypeName(SPIRV::SPIRVTypePipe* PT) {
-  return SPIR_TYPE_NAME_PIPE_T;
+  return kSPR2TypeName::Pipe;
 }
 
 Type *
@@ -692,17 +692,19 @@ SPIRVToLLVM::transType(SPIRVType *T) {
   }
   case OpTypeStruct: {
     auto ST = static_cast<SPIRVTypeStruct *>(T);
-    std::vector<Type *> MT;
-    for (size_t I = 0, E = ST->getMemberCount(); I != E; ++I)
-      MT.push_back(transType(ST->getMemberType(I)));
     auto Name = ST->getName();
     if (!Name.empty()) {
       if (auto OldST = M->getTypeByName(Name))
         OldST->setName("");
     }
-    return mapType(T, StructType::create(*Context, MT, Name,
-      ST->isPacked()));
-    }
+    auto *StructTy = StructType::create(*Context, Name);
+    mapType(ST, StructTy);
+    SmallVector<Type *, 4> MT;
+    for (size_t I = 0, E = ST->getMemberCount(); I != E; ++I)
+      MT.push_back(transType(ST->getMemberType(I)));
+    StructTy->setBody(MT, ST->isPacked());
+    return StructTy;
+  }
   case OpTypePipe: {
     auto PT = static_cast<SPIRVTypePipe *>(T);
     return mapType(T, getOrCreateOpaquePtrType(M,
@@ -713,7 +715,7 @@ SPIRVToLLVM::transType(SPIRVType *T) {
     auto OC = T->getOpCode();
     if (isOpaqueGenericTypeOpCode(OC))
       return mapType(T, getOrCreateOpaquePtrType(M,
-          BuiltinOpaqueGenericTypeOpCodeMap::rmap(OC),
+          OCLOpaqueTypeOpCodeMap::rmap(OC),
           getOCLOpaqueTypeAddrSpace(OC)));
     llvm_unreachable("Not implemented");
     }
@@ -786,7 +788,7 @@ SPIRVToLLVM::transTypeToOCLTypeName(SPIRVType *T, bool IsSigned) {
     return rmap<std::string>(static_cast<SPIRVTypeImage *>(T)->getDescriptor());
   default:
       if (isOpaqueGenericTypeOpCode(T->getOpCode())) {
-        return BuiltinOpaqueGenericTypeOpCodeMap::rmap(T->getOpCode());
+        return OCLOpaqueTypeOpCodeMap::rmap(T->getOpCode());
       }
       llvm_unreachable("Not implemented");
       return "unknown";
@@ -2436,11 +2438,14 @@ Instruction *SPIRVToLLVM::transOCLRelational(SPIRVInstruction *I, BasicBlock *BB
       I, mutateCallInstOCL(
              M, CI,
              [=](CallInst *, std::vector<Value *> &Args, llvm::Type *&RetTy) {
-               Type *Int32Ty = Type::getInt32Ty(*Context);
-               RetTy = Int32Ty;
-               if (CI->getType()->isVectorTy())
-                 RetTy = VectorType::get(Int32Ty,
+               Type *IntTy = Type::getInt32Ty(*Context);
+               RetTy = IntTy;
+               if (CI->getType()->isVectorTy()) {
+                 if(cast<VectorType>(CI->getOperand(0)->getType())->getElementType()->isDoubleTy())
+                   IntTy = Type::getInt64Ty(*Context);
+                 RetTy = VectorType::get(IntTy,
                                          CI->getType()->getVectorNumElements());
+               }
                return CI->getCalledFunction()->getName();
              },
              [=](CallInst *NewCI) -> Instruction * {

@@ -56,10 +56,11 @@ public:
   virtual void getAnalysisUsage(AnalysisUsage &AU) const;
   virtual bool runOnModule(Module &M);
 
-  /// \return Adapted function type based on kernel argument metadata.
-  /// e.g. for a function with argument of read only opencl.image_2d_t* type
+  /// \return Adapted type based on kernel argument metadata. If \p V is
+  ///   a function, returns function type.
+  /// E.g. for a function with argument of read only opencl.image_2d_t* type
   /// returns a function with argument of type opencl.image2d_t.read_only*.
-  FunctionType *getAdaptedFunctionType(Function *);
+  Type *getAdaptedType(Value *V);
 
   static char ID;
 private:
@@ -74,6 +75,7 @@ private:
   MDNode *getArgMetadata(Function *, const std::string& MDName);
   MDNode *getKernelMetadata(Function *F);
   void adaptArgumentsByMetadata(Function* F);
+  void adaptArgumentsBySamplerUse(Module &M);
   void adaptFunction(Function *F);
   void addAdaptedType(Value *V, Type *T);
   void addWork(Function *F);

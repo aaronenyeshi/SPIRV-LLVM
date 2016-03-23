@@ -69,6 +69,10 @@ namespace SPIRV{
 // This workaround checks metadata to determine if a function is kernel.
 #define SPCV_RELAX_KERNEL_CALLING_CONV 1
 
+class SPIRVOpaqueType;
+typedef SPIRVMap<std::string, Op, SPIRVOpaqueType>
+  SPIRVOpaqueTypeOpCodeMap;
+
 // Ad hoc function used by LLVM/SPIRV converter for type casting
 #define SPCV_CAST "spcv.cast"
 #define LLVM_MEMCPY "llvm.memcpy"
@@ -259,7 +263,6 @@ typedef SPIRVMap<SPIRVExtInstSetKind, std::string, SPIRVExtSetShortName>
 #define OCL_TYPE_NAME_SAMPLER_T             "sampler_t"
 #define SPIR_TYPE_NAME_EVENT_T              "opencl.event_t"
 #define SPIR_TYPE_NAME_CLK_EVENT_T          "opencl.clk_event_t"
-#define SPIR_TYPE_NAME_PIPE_T               "opencl.pipe_t"
 #define SPIR_TYPE_NAME_BLOCK_T              "opencl.block"
 #define SPIR_INTRINSIC_BLOCK_BIND           "spir_block_bind"
 #define SPIR_INTRINSIC_GET_BLOCK_INVOKE     "spir_get_block_invoke"
@@ -272,14 +275,24 @@ namespace kLLVMTypeName {
 }
 
 namespace kSPIRVTypeName {
-  const static char Delimiter   = '.';
-  const static char SampledImg[] = "spirv.sampled_image_t";
+  const static char Delimiter        = '.';
+  const static char DeviceEvent[]    = "DeviceEvent";
+  const static char Event[]          = "Event";
+  const static char Image[]          = "Image";
+  const static char Pipe[]           = "Pipe";
+  const static char PostfixDelim     = '_';
+  const static char Prefix[]         = "spirv";
+  const static char PrefixAndDelim[] = "spirv.";
+  const static char Queue[]          = "Queue";
+  const static char ReserveId[]      = "ReserveId";
+  const static char SampledImg[]     = "SampledImage";
 }
 
 namespace kSPR2TypeName {
   const static char Delimiter   = '.';
   const static char OCLPrefix[]   = "opencl.";
   const static char ImagePrefix[] = "opencl.image";
+  const static char Pipe[]        = "opencl.pipe_t";
   const static char Sampler[]     = "opencl.sampler_t";
   const static char Event[]       = "opencl.event_t";
 }
@@ -774,8 +787,24 @@ getScalarOrArray(Value *V, unsigned Size, Instruction *Pos);
 void
 dumpUsers(Value* V, StringRef Prompt = "");
 
+/// Get SPIR-V type name as spirv.BaseTyName.Postfixes.
+std::string
+getSPIRVTypeName(StringRef BaseTyName, StringRef Postfixes = "");
+
+/// Get SPIR-V type by changing the type name from spirv.OldName.Postfixes
+/// to spirv.NewName.Postfixes.
 Type *
-getSPIRVSampledImageType(Module *M, Type *ImageType);
+getSPIRVTypeByChangeBaseTypeName(Module *M, Type *T, StringRef OldName,
+    StringRef NewName);
+
+/// Get the postfixes of SPIR-V image type name as in spirv.Image.postfixes.
+std::string
+getSPIRVImageTypePostfixes(SPIRVTypeImageDescriptor Desc,
+    SPIRVAccessQualifierKind Acc);
+
+/// Map OpenCL opaque type name to SPIR-V type name.
+std::string
+mapOCLTypeNameToSPIRV(StringRef Name, StringRef Acc = "");
 
 bool
 eraseUselessFunctions(Module *M);
@@ -846,6 +875,17 @@ PointerType *getInt8PtrTy(PointerType *T);
 /// Cast a value to a i8* by inserting a cast instruction.
 Value *
 castToInt8Ptr(Value *V, Instruction *Pos);
+
+template<> inline void
+SPIRVMap<std::string, Op, SPIRVOpaqueType>::init() {
+  add(kSPIRVTypeName::DeviceEvent, OpTypeDeviceEvent);
+  add(kSPIRVTypeName::Event, OpTypeEvent);
+  add(kSPIRVTypeName::Image, OpTypeImage);
+  add(kSPIRVTypeName::Pipe, OpTypePipe);
+  add(kSPIRVTypeName::Queue, OpTypeQueue);
+  add(kSPIRVTypeName::ReserveId, OpTypeReserveId);
+  add(kSPIRVTypeName::SampledImg, OpTypeSampledImage);
+}
 
 }
 

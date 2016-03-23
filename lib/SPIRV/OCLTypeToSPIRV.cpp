@@ -1,4 +1,4 @@
-//===- OCLTypeToSPIRV.cpp - Adapt types from OCL for SPIRV ------*- C++ -*-===//
+﻿//===- OCLTypeToSPIRV.cpp - Adapt types from OCL for SPIRV ------*- C++ -*-===//
 //
 //                     The LLVM/SPIRV Translator
 //
@@ -33,6 +33,9 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements adaptation of OCL types for SPIRV.
+//
+// It first maps kernel arguments of OCL opaque types to SPIR-V type, then
+// propagates the mapping to the uses of the kernel arguments.
 //
 //===----------------------------------------------------------------------===//
 #define DEBUG_TYPE "cltytospv"
@@ -79,6 +82,8 @@ OCLTypeToSPIRV::runOnModule(Module& Module) {
   for (auto &F:Module.functions())
     adaptArgumentsByMetadata(&F);
 
+  adaptArgumentsBySamplerUse(Module);
+
   while (!WorkSet.empty()) {
     Function *F = *WorkSet.begin();
     WorkSet.erase(WorkSet.begin());
@@ -113,6 +118,17 @@ getArgIndex(CallInst *CI, Value *V) {
       return AI;
   }
   llvm_unreachable("Not argument of function call");
+}
+
+/// Find index of \param V as argument of function call \param CI.
+static unsigned
+getArgIndex(Function *F, Value *V) {
+  auto A = F->arg_begin(), E = F->arg_end();
+  for (unsigned I = 0; A != E; ++I, ++A) {
+    if (A == V)
+      return I;
+  }
+  llvm_unreachable("Not argument of function");
 }
 
 /// Get i-th argument of a function.
@@ -212,6 +228,54 @@ OCLTypeToSPIRV::getArgBaseTypeMetadata(Function *F) {
   return getArgMetadata(F, SPIR_MD_KERNEL_ARG_BASE_TYPE);
 }
 
+// Handle functions with sampler arguments that don't get called by
+// a kernel function.
+void OCLTypeToSPIRV::adaptArgumentsBySamplerUse(Module &M)
+{
+  SmallPtrSet<Function*, 5> Processed;
+
+  std::function<void(Function*, unsigned)> TraceArg = [&](Function *F,
+                                                          unsigned Idx) {
+    // If we have cycles in the call graph in the future, bail out
+    // if we've already processed this function.
+    if (Processed.insert(F).second == false)
+      return;
+
+    for (auto U : F->users()) {
+      auto *CI = dyn_cast<CallInst>(U);
+      if (!CI)
+        continue;
+
+      auto SamplerArg = CI->getArgOperand(Idx);
+      if (!isa<Argument>(SamplerArg) ||
+          AdaptedTy.count(SamplerArg) != 0) // Already traced this, move on.
+        continue;
+
+      addAdaptedType(SamplerArg,
+                     getOrCreateOpaquePtrType(&M, kSPR2TypeName::Sampler));
+      auto Caller = cast<Argument>(SamplerArg)->getParent();
+      addWork(Caller);
+      TraceArg(Caller, getArgIndex(Caller, SamplerArg));
+    }
+  };
+
+  for (auto &F : M) {
+    if (!F.empty()) // not decl
+      continue;
+    auto MangledName = F.getName();
+    std::string DemangledName;
+    if (!oclIsBuiltin(MangledName, 12, &DemangledName, false))
+      continue;
+    if (DemangledName.find(kSPIRVName::SampledImage) == std::string::npos)
+      continue;
+
+    TraceArg(&F, 1);
+  }
+}
+
+/// Go through all kernel functions, get access qualifier for image and pipe
+/// types and use them to map the function arguments to the SPIR-V type.
+/// ToDo: Map other OpenCL opaque types to SPIR-V types.
 void
 OCLTypeToSPIRV::adaptArgumentsByMetadata(Function* F) {
   auto TypeMD = getArgBaseTypeMetadata(F);
@@ -230,19 +294,13 @@ OCLTypeToSPIRV::adaptArgumentsByMetadata(Function* F) {
       Changed = true;
     } else if (isPointerToOpaqueStructType(NewTy)) {
       auto STName = NewTy->getPointerElementType()->getStructName();
-      if (STName.startswith(kSPR2TypeName::ImagePrefix)) {
+      if (STName.startswith(kSPR2TypeName::ImagePrefix) ||
+          STName == kSPR2TypeName::Pipe) {
         auto Ty = STName.str();
         auto AccMD = getArgAccessQualifierMetadata(F);
         auto AccStr = getMDOperandAsString(AccMD, I);
         addAdaptedType(Arg, getOrCreateOpaquePtrType(M,
-            Ty + kSPR2TypeName::Delimiter + AccStr));
-        Changed = true;
-      } else if (STName == SPIR_TYPE_NAME_PIPE_T) {
-        auto Ty = STName.str();
-        auto AccMD = getArgAccessQualifierMetadata(F);
-        auto AccStr = getMDOperandAsString(AccMD, I);
-        addAdaptedType(Arg, getOrCreateOpaquePtrType(M,
-            Ty + kSPR2TypeName::Delimiter + AccStr));
+            mapOCLTypeNameToSPIRV(Ty, AccStr)));
         Changed = true;
       }
     }
@@ -250,7 +308,6 @@ OCLTypeToSPIRV::adaptArgumentsByMetadata(Function* F) {
   if (Changed)
     addWork(F);
 }
-
 
 // OCL sampler, image and pipe type need to be regularized before converting
 // to SPIRV types.
@@ -280,13 +337,15 @@ OCLTypeToSPIRV::adaptArgumentsByMetadata(Function* F) {
 // opencl data type x and access qualifier y, and use opencl.image_x.y to
 // represent image_x type with access qualifier y.
 //
-FunctionType *
-OCLTypeToSPIRV::getAdaptedFunctionType(Function *F) {
-  auto Loc = AdaptedTy.find(F);
+Type *
+OCLTypeToSPIRV::getAdaptedType(Value *V) {
+  auto Loc = AdaptedTy.find(V);
   if (Loc != AdaptedTy.end())
-    return cast<FunctionType>(Loc->second);
+    return Loc->second;
 
-  return F->getFunctionType();
+  if(auto F = dyn_cast<Function>(V))
+    return F->getFunctionType();
+  return V->getType();
 }
 
 }
